@@ -4,39 +4,33 @@
 #include <raymath.h>
 #include <string>
 #include "button.hpp"
-#include <vector>
 
 using namespace std;
 
-// ============ CÀI ĐẶT MÀU SẮC ============
-Color mauXanhLa = {173, 204, 96, 255};      
-Color mauXanhDam = {43, 51, 24, 255};       
+Color green = {173, 204, 96, 255};
+Color darkgreen = {43, 51, 24, 255};
 
-// ============ CÀI ĐẶT GAME ============
-int kichThuocO = 50;                        
-int soOTrongMoiHangCot = 20;                
-int leManhGame = 62.5;                      
-float tiLeDauRan  = 1.0f;   // chỉnh kích thước đầu rắn
-float tiLeThanRan = 1.0f;   // chỉnh kích thước thân rắn
-float tiLeThucAn  = 0.8f;   // chỉnh kích thước thức ăn
-double thoiGianCapNhatCuoi = 0;             
+int kichThuocO = 25; //cellsize
+int SoOtrongMoiHangCot = 20; //cellcount
+int offset = 62.5;
 
-// ============ TEXTURE VÀ HÌNH ẢNH ============
-Texture2D hinhNenGame;                      
-Texture2D hinhDauRan;                       
-Texture2D hinhThanRan;                      
-Texture2D hinhThucAn[5];                    
-int tongSoLoaiThucAn = 5;                   
+double lastUpdateTime = 0;
 
-// ============ ÂM THANH VÀ NHẠC NỀN ============
-Music nhacNenMenu;                          
-bool dangPhatNhac = false;                  
+Texture2D backgroundTexture;
+Texture2D snakeHeadTexture;
+Texture2D snakeBodyTexture;
+Texture2D foodTextures[5];
+int totalFoodTypes = 5;
 
-bool kiemTraPhanTuTrongDeque(Vector2 phanTu, deque<Vector2> danhSach)
+// === Thêm nhạc nền menu ===
+Music backgroundMusic;
+bool musicPlaying = false;
+
+bool ElementInDeque(Vector2 element, deque<Vector2> deque)
 {
-    for (unsigned int i = 0; i < danhSach.size(); i++)
+    for (unsigned int i = 0; i < deque.size(); i++)
     {
-        if (Vector2Equals(danhSach[i], phanTu))
+        if (Vector2Equals(deque[i], element))
         {
             return true;
         }
@@ -44,440 +38,396 @@ bool kiemTraPhanTuTrongDeque(Vector2 phanTu, deque<Vector2> danhSach)
     return false;
 }
 
-bool kiemTraSuKienThoiGian(double khoangThoiGian)
+bool eventTriggered(double interval)
 {
-    double thoiGianHienTai = GetTime();
-    if (thoiGianHienTai - thoiGianCapNhatCuoi >= khoangThoiGian)
+    double currentTime = GetTime();
+    if (currentTime - lastUpdateTime >= interval)
     {
-        thoiGianCapNhatCuoi = thoiGianHienTai;
+        lastUpdateTime = currentTime;
         return true;
     }
     return false;
 }
 
-class ConRan
+class Snake
 {
 public:
-    deque<Vector2> thanRan = {Vector2{6, 9}, Vector2{5, 9}, Vector2{4, 9}};  
-    Vector2 huongDiChuyen = {1, 0};                                          
-    bool themDoanMoi = false;                                                
-
-    void veRan()
+    deque<Vector2> body = {Vector2{6, 9}, Vector2{5, 9}, Vector2{4, 9}};
+    Vector2 direction = {1, 0};
+    bool addSegment = false;
+ 
+    void Draw()
     {
-        for (unsigned int i = 0; i < thanRan.size(); i++)
-        {
-            float x = thanRan[i].x;
-            float y = thanRan[i].y;
+        for (unsigned int i = 0; i < body.size(); i++)
+        {                           
+            float x = body[i].x;
+            float y = body[i].y;
+            Rectangle segment = Rectangle{offset + x * kichThuocO, offset + y * kichThuocO, (float)kichThuocO, (float)kichThuocO};
 
-            // Tâm ô lưới
-             float centerX = leManhGame + (x + 0.5f) * kichThuocO;
-             float centerY = leManhGame + (y + 0.5f) * kichThuocO;
+            if (i == 0) // Head
+            {
+                float rotation = 0.0f;
+                if (direction.x == 1)
+                    rotation = 0.0f;
+                else if (direction.x == -1)
+                    rotation = 180.0f;
+                else if (direction.y == -1)
+                    rotation = 270.0f;
+                else if (direction.y == 1)
+                    rotation = 90.0f;
 
+                Vector2 origin = {kichThuocO / 2.0f, kichThuocO / 2.0f};
+                Vector2 position = {segment.x + kichThuocO / 2.0f, segment.y + kichThuocO / 2.0f};
+                DrawTexturePro(snakeHeadTexture,
+                               Rectangle{0, 0, (float)snakeHeadTexture.width, (float)snakeHeadTexture.height},
+                               Rectangle{position.x, position.y, (float)kichThuocO, (float)kichThuocO},
+                               origin, rotation, WHITE);
+            }
+            else
+            {
+                float rotation = 0.0f;
+                Vector2 currentDirection = {0, 0};
+                Vector2 prevSegment = body[i - 1];
+                Vector2 currentSegment = body[i];
+                currentDirection.x = prevSegment.x - currentSegment.x;
+                currentDirection.y = prevSegment.y - currentSegment.y;
 
-            if (i == 0) 
-{
-    float gocXoay = 0.0f;
-    if (huongDiChuyen.x == 1)      gocXoay = 0.0f;
-    else if (huongDiChuyen.x == -1) gocXoay = 180.0f;
-    else if (huongDiChuyen.y == -1) gocXoay = 270.0f;
-    else if (huongDiChuyen.y == 1)  gocXoay = 90.0f;
+                if (currentDirection.x == 1)
+                    rotation = 0.0f;
+                else if (currentDirection.x == -1)
+                    rotation = 180.0f;
+                else if (currentDirection.y == -1)
+                    rotation = 270.0f;
+                else if (currentDirection.y == 1)
+                    rotation = 90.0f;
 
-    // kích thước đầu rắn tính theo tỉ lệ riêng
-    float width  = kichThuocO * tiLeDauRan;
-    float height = kichThuocO * tiLeDauRan;
-
-    Rectangle dest = {centerX, centerY, width, height};
-    Vector2 diemGoc = {width / 2.0f, height / 2.0f};
-
-    DrawTexturePro(
-        hinhDauRan,
-        Rectangle{0, 0, (float)hinhDauRan.width, (float)hinhDauRan.height},
-        dest,
-        diemGoc,
-        gocXoay,
-        WHITE
-    );
-}
-            else 
-{
-    float gocXoay = 0.0f;
-    Vector2 huongHienTai = {0, 0};
-    Vector2 doanTruoc = thanRan[i - 1];
-    Vector2 doanHienTai = thanRan[i];
-    huongHienTai.x = doanTruoc.x - doanHienTai.x;
-    huongHienTai.y = doanTruoc.y - doanHienTai.y;
-
-    if (huongHienTai.x == 1)       gocXoay = 0.0f;
-    else if (huongHienTai.x == -1) gocXoay = 180.0f;
-    else if (huongHienTai.y == -1) gocXoay = 270.0f;
-    else if (huongHienTai.y == 1)  gocXoay = 90.0f;
-
-    // kích thước thân rắn tính theo tỉ lệ riêng
-    float width  = kichThuocO * tiLeThanRan;
-    float height = kichThuocO * tiLeThanRan;
-
-    Rectangle dest = {centerX, centerY, width, height};
-    Vector2 diemGoc = {width / 2.0f, height / 2.0f};
-
-    DrawTexturePro(
-        hinhThanRan,
-        Rectangle{0, 0, (float)hinhThanRan.width, (float)hinhThanRan.height},
-        dest,
-        diemGoc,
-        gocXoay,
-        WHITE
-    );
-}
-
+                Vector2 origin = {kichThuocO / 2.0f, kichThuocO / 2.0f};
+                Vector2 position = {segment.x + kichThuocO / 2.0f, segment.y + kichThuocO / 2.0f};
+                DrawTexturePro(snakeBodyTexture,
+                               Rectangle{0, 0, (float)snakeBodyTexture.width, (float)snakeBodyTexture.height},
+                               Rectangle{position.x, position.y, (float)kichThuocO, (float)kichThuocO},
+                               origin, rotation, WHITE);
+            }
         }
     }
 
-    void capNhatRan()
+    void Update()
     {
-        thanRan.push_front(Vector2Add(thanRan[0], huongDiChuyen));
-        if (!themDoanMoi)
+        body.push_front(Vector2Add(body[0], direction));
+        if (!addSegment)
         {
-            thanRan.pop_back();
+            body.pop_back();
         }
-        themDoanMoi = false; 
+        addSegment = false;
     }
 
-    void datLaiRan()
+    void Reset()
     {
-        thanRan = {Vector2{6, 9}, Vector2{5, 9}, Vector2{4, 9}};
-        huongDiChuyen = {1, 0};
+        body = {Vector2{6, 9}, Vector2{5, 9}, Vector2{4, 9}};
+        direction = {1, 0};
     }
 };
 
-class ThucAn
+class Food
 {
 public:
-    Vector2 viTri;          
-    int loaiThucAn;         
+    Vector2 position;
+    int foodType;
 
-    ThucAn(deque<Vector2> thanRan)
+    Food(deque<Vector2> snakeBody)
     {
-        viTri = taoViTriNgauNhien(thanRan);
-        loaiThucAn = GetRandomValue(0, tongSoLoaiThucAn - 1);
+        position = GenerateRandomPos(snakeBody);
+        foodType = GetRandomValue(0, totalFoodTypes - 1);
     }
 
-    void veThucAn()
+    void Draw()
     {
-        // scale cơ bản: scale texture gốc vừa khít 1 ô
-    float baseScale = (float)kichThuocO / 28.0f;  // 28 là size gốc texture của bạn
-    float scale = baseScale * tiLeThucAn;         // nhân tỉ lệ riêng thức ăn
-
-    // kích thước thức ăn sau khi scale
-    float w = hinhThucAn[loaiThucAn].width  * scale;
-    float h = hinhThucAn[loaiThucAn].height * scale;
-
-    // canh giữa trong ô
-    float pixelX = leManhGame + viTri.x * kichThuocO + (kichThuocO - w) / 2.0f;
-    float pixelY = leManhGame + viTri.y * kichThuocO + (kichThuocO - h) / 2.0f;
-
-    Vector2 viTriThucTe = {pixelX, pixelY};
-    DrawTextureEx(hinhThucAn[loaiThucAn], viTriThucTe, 0.0f, scale, WHITE);
+        float scale = (float)kichThuocO / 28.0f;
+        Vector2 pos = {offset + position.x * kichThuocO, offset + position.y * kichThuocO};
+        DrawTextureEx(foodTextures[foodType], pos, 0.0f, scale, WHITE);
     }
 
-    Vector2 taoONgauNhien()
+    Vector2 GenerateRandomCell()
     {
-        float x = GetRandomValue(0, soOTrongMoiHangCot - 1);
-        float y = GetRandomValue(0, soOTrongMoiHangCot - 1);
+        float x = GetRandomValue(0, SoOtrongMoiHangCot - 1);
+        float y = GetRandomValue(0, SoOtrongMoiHangCot - 1);
         return Vector2{x, y};
     }
 
-    Vector2 taoViTriNgauNhien(deque<Vector2> thanRan)
+    Vector2 GenerateRandomPos(deque<Vector2> snakeBody)
     {
-        Vector2 viTriMoi = taoONgauNhien();
-        while (kiemTraPhanTuTrongDeque(viTriMoi, thanRan))
+        Vector2 position = GenerateRandomCell();
+        while (ElementInDeque(position, snakeBody))
         {
-            viTriMoi = taoONgauNhien();
+            position = GenerateRandomCell();
         }
-        return viTriMoi;
+        return position;
     }
 
-    void taoLaiThucAn(deque<Vector2> thanRan)
+    void Regenerate(deque<Vector2> snakeBody)
     {
-        viTri = taoViTriNgauNhien(thanRan);
-        loaiThucAn = GetRandomValue(0, tongSoLoaiThucAn - 1);
+        position = GenerateRandomPos(snakeBody);
+        foodType = GetRandomValue(0, totalFoodTypes - 1);
     }
 };
-const int SO_LUONG_THUC_AN = 2;   // muốn 2 mồi
-bool tranhTrungThucAn = true;
-class TroChoiRanSanMoi
+
+class Game
 {
 public:
-    ConRan ran = ConRan();                  
-    std::vector<ThucAn> dsThucAn;   // danh sách nhiều mồi  
-    bool dangChay = true;                   
-    int diem = 0;                          
-    Sound amThanhAn;                       
-    Sound amThanhVaCham;                   
-    bool daGhet = false;                   
+    Snake snake = Snake();
+    Food food = Food(snake.body);
+    bool running = true;
+    int score = 0;
+    Sound eatSound;
+    Sound wallSound;
+    bool isDead = false;
 
-    TroChoiRanSanMoi()
+    Game()
     {
         InitAudioDevice();
-        amThanhAn = LoadSound("Sounds/eat.mp3");
-        amThanhVaCham = LoadSound("Sounds/wall.mp3");
-        taoTatCaThucAn();
+        eatSound = LoadSound("Sounds/eat.mp3");
+        wallSound = LoadSound("Sounds/wall.mp3");
     }
 
-    ~TroChoiRanSanMoi()
+    ~Game()
     {
-        UnloadSound(amThanhAn);
-        UnloadSound(amThanhVaCham);
+        UnloadSound(eatSound);
+        UnloadSound(wallSound);
         CloseAudioDevice();
     }
 
-    void veGame()
+    void Draw()
     {
-        for (auto &food : dsThucAn)
-        food.veThucAn();
-
-        ran.veRan();
+        food.Draw();
+        snake.Draw();
     }
 
-    void capNhatGame()
+    void Update()
     {
-        if (dangChay)
+        if (running)
         {
-            ran.capNhatRan();
-            kiemTraVaChamVoiThucAn();
-            kiemTraVaChamVoiTuong();
-            kiemTraVaChamVoiThan();
+            snake.Update();
+            CheckCollisionWithFood();
+            CheckCollisionWithEdges();
+            CheckCollisionWithTail();
         }
     }
 
-    void kiemTraVaChamVoiThucAn()
+    void CheckCollisionWithFood()
     {
-        // duyệt qua từng mồi
-        for (int i = 0; i < (int)dsThucAn.size(); ++i)
+        if (Vector2Equals(snake.body[0], food.position))
         {
-            auto &food = dsThucAn[i];
-            if (Vector2Equals(ran.thanRan[0], food.viTri))
-            {
-                taoLaiThucAnKhongTrung(i);  // random lại mồi này, tránh trùng mồi khác
-                ran.themDoanMoi = true;
-                diem++;
-                PlaySound(amThanhAn);
-            }
-        }
-        
-    }
-
-    void kiemTraVaChamVoiTuong()
-    {
-        if (ran.thanRan[0].x == soOTrongMoiHangCot || ran.thanRan[0].x == -1 ||
-            ran.thanRan[0].y == soOTrongMoiHangCot || ran.thanRan[0].y == -1)
-        {
-            ketThucGame();
+            food.Regenerate(snake.body);
+            snake.addSegment = true;
+            score++;
+            PlaySound(eatSound);
         }
     }
 
-    void ketThucGame()
+    void CheckCollisionWithEdges()
     {
-        ran.datLaiRan();
-        taoTatCaThucAn();
-        dangChay = false;
-        daGhet = true;
-        PlaySound(amThanhVaCham);
-    }
-
-    void kiemTraVaChamVoiThan()
-    {
-        deque<Vector2> thanKhongCoDau = ran.thanRan;
-        thanKhongCoDau.pop_front(); 
-        
-        if (kiemTraPhanTuTrongDeque(ran.thanRan[0], thanKhongCoDau))
+        if (snake.body[0].x == SoOtrongMoiHangCot || snake.body[0].x == -1 ||
+            snake.body[0].y == SoOtrongMoiHangCot || snake.body[0].y == -1)
         {
-            ketThucGame();
+            GameOver();
         }
     }
 
-    void khoiDongLai()
+    void GameOver()
     {
-        ran.datLaiRan();
-        for (auto &food : dsThucAn)
-        taoTatCaThucAn();
-        diem = 0;
-        daGhet = false;
-        dangChay = true;
+        snake.Reset();
+        food.Regenerate(snake.body);
+        running = false;
+        isDead = true;
+        PlaySound(wallSound);
+    }
+
+    void CheckCollisionWithTail()
+    {
+        deque<Vector2> headlessBody = snake.body;
+        headlessBody.pop_front();
+        if (ElementInDeque(snake.body[0], headlessBody))
+        {
+            GameOver();
+        }
+    }
+
+    void Restart()
+    {
+        snake.Reset();
+        food.Regenerate(snake.body);
+        score = 0;
+        isDead = false;
+        running = true;
     }
 };
 
-enum ManHinhGame
+enum GameScreen
 {
-    MENU,    
-    GAME     
+    MENU,
+    GAME
 };
 
 int main()
 {
-    ManHinhGame manHinhHienTai = MENU;
-    cout << "Đang khởi động game..." << endl;
+    GameScreen currentScreen = MENU;
+    cout << "Starting the game..." << endl;
 
-    int chieuRongCuaSo = 2 * leManhGame + kichThuocO * soOTrongMoiHangCot;
-    int chieuCaoCuaSo = 2 * leManhGame + kichThuocO * soOTrongMoiHangCot;
+    int windowWidth = 2 * offset + kichThuocO * SoOtrongMoiHangCot;
+    int windowHeight = 2 * offset + kichThuocO * SoOtrongMoiHangCot;
 
-    InitWindow(chieuRongCuaSo, chieuCaoCuaSo, "Game Rắn Săn Mồi");
+    InitWindow(windowWidth, windowHeight, "Snake Game");
     SetTargetFPS(60);
 
-    Texture2D hinhNenMenu = LoadTexture("Graphics/background.png");
-    Button nutStart{"Graphics/start.png", {0, 0}, 5};
-    Button nutThoat{"Graphics/exit.png", {0, 0}, 5};
-    nutStart.setPosition({
-    (chieuRongCuaSo - nutStart.getTexture().width) / 2.0f,
-    chieuCaoCuaSo * 0.60f
-     });
-      nutThoat.setPosition({
-    (chieuRongCuaSo - nutThoat.getTexture().width) / 2.0f,
-    chieuCaoCuaSo * 0.70f
-      });
+    Texture2D menubackground = LoadTexture("Graphics/background.png");
+    Button startButton{"Graphics/start.png", {250, 420}, 3.5};
+    Button exitButton{"Graphics/exit.png", {250, 480}, 3.5};
 
-    Image anhNenGame = LoadImage("Graphics/san.png");
-    hinhNenGame = LoadTextureFromImage(anhNenGame);
-    UnloadImage(anhNenGame);
+    Image backgroundImage = LoadImage("Graphics/san.png");
+    backgroundTexture = LoadTextureFromImage(backgroundImage);
+    UnloadImage(backgroundImage);
 
-    Image anhDauRan = LoadImage("Graphics/dau2.png");
-    hinhDauRan = LoadTextureFromImage(anhDauRan);
-    UnloadImage(anhDauRan);
+    Image headImage = LoadImage("Graphics/dau.png");
+    snakeHeadTexture = LoadTextureFromImage(headImage);
+    UnloadImage(headImage);
 
-    Image anhThanRan = LoadImage("Graphics/than.png");
-    hinhThanRan = LoadTextureFromImage(anhThanRan);
-    UnloadImage(anhThanRan);
+    Image bodyImage = LoadImage("Graphics/than.png");
+    snakeBodyTexture = LoadTextureFromImage(bodyImage);
+    UnloadImage(bodyImage);
 
-    for (int i = 0; i < tongSoLoaiThucAn; i++)
+    for (int i = 0; i < totalFoodTypes; i++)
     {
-        string duongDanThucAn = "Graphics/Food" + to_string(i + 1) + ".png";
-        Image anhThucAn = LoadImage(duongDanThucAn.c_str());
-        hinhThucAn[i] = LoadTextureFromImage(anhThucAn);
-        UnloadImage(anhThucAn);
+        string foodPath = "Graphics/Food" + to_string(i + 1) + ".png";
+        Image foodImage = LoadImage(foodPath.c_str());
+        foodTextures[i] = LoadTextureFromImage(foodImage);
+        UnloadImage(foodImage);
     }
 
-    TroChoiRanSanMoi game = TroChoiRanSanMoi();
-    nhacNenMenu = LoadMusicStream("Sounds/nhacnen.mp3");
+    Game game = Game();
 
-    while (!WindowShouldClose()) 
+    // Load nhạc menu một lần duy nhất
+    backgroundMusic = LoadMusicStream("Sounds/nhacnen.mp3");
+
+    while (!WindowShouldClose())
     {
-        Vector2 viTriChuot = GetMousePosition();
-        bool nhanChuot = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+        Vector2 mousePosition = GetMousePosition();
+        bool mousePressed = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
 
-        if (manHinhHienTai == MENU)
+        // Xử lý nhạc theo màn hình
+        if (currentScreen == MENU)
         {
-            if (!dangPhatNhac)
+            if (!musicPlaying)
             {
-                PlayMusicStream(nhacNenMenu);
-                dangPhatNhac = true;
+                PlayMusicStream(backgroundMusic);
+                musicPlaying = true;
             }
-            UpdateMusicStream(nhacNenMenu); 
+            UpdateMusicStream(backgroundMusic);
         }
-        else if (manHinhHienTai == GAME)
+        else if (currentScreen == GAME)
         {
-            if (dangPhatNhac)
+            if (musicPlaying)
             {
-                StopMusicStream(nhacNenMenu);
-                dangPhatNhac = false;
-            }
-        }
-
-        BeginDrawing(); 
-
-        if (manHinhHienTai == MENU)
-        {
-            ClearBackground(mauXanhLa);
-
-            float tyLeX = (float)chieuRongCuaSo / hinhNenMenu.width;
-            float tyLeY = (float)chieuCaoCuaSo / hinhNenMenu.height;
-            float tyLe = fmaxf(tyLeX, tyLeY); 
-            DrawTextureEx(hinhNenMenu, Vector2{0, 0}, 0.0f, tyLe, WHITE);
-
-            nutStart.Draw();
-            nutThoat.Draw();
-
-            if (nutStart.isPressed(viTriChuot, nhanChuot))
-            {
-                game.khoiDongLai();
-                manHinhHienTai = GAME;
-            }
-
-            if (nutThoat.isPressed(viTriChuot, nhanChuot))
-            {
-                break; 
+                StopMusicStream(backgroundMusic);
+                musicPlaying = false;
             }
         }
-        else if (manHinhHienTai == GAME)
+
+        BeginDrawing();
+
+        if (currentScreen == MENU)
         {
-            if (kiemTraSuKienThoiGian(0.2))
+            ClearBackground(green);
+
+            float scaleX = (float)windowWidth / menubackground.width;
+            float scaleY = (float)windowHeight / menubackground.height;
+            float scale = fmaxf(scaleX, scaleY);
+            DrawTextureEx(menubackground, Vector2{0, 0}, 0.0f, scale, WHITE);
+
+            startButton.Draw();
+            exitButton.Draw();
+
+            if (startButton.isPressed(mousePosition, mousePressed))
             {
-                game.capNhatGame();
+                game.Restart();
+                currentScreen = GAME;
             }
 
-            if (game.dangChay) 
+            if (exitButton.isPressed(mousePosition, mousePressed))
             {
-                if (IsKeyPressed(KEY_UP) && game.ran.huongDiChuyen.y != 1)
-                    game.ran.huongDiChuyen = {0, -1};
-                if (IsKeyPressed(KEY_DOWN) && game.ran.huongDiChuyen.y != -1)
-                    game.ran.huongDiChuyen = {0, 1};
-                if (IsKeyPressed(KEY_LEFT) && game.ran.huongDiChuyen.x != 1)
-                    game.ran.huongDiChuyen = {-1, 0};
-                if (IsKeyPressed(KEY_RIGHT) && game.ran.huongDiChuyen.x != -1)
-                    game.ran.huongDiChuyen = {1, 0};
+                break;
+            }
+        }
+        else if (currentScreen == GAME)
+        {
+            if (eventTriggered(0.2))
+            {
+                game.Update();
+            }
+
+            if (game.running)
+            {
+                if (IsKeyPressed(KEY_UP) && game.snake.direction.y != 1)
+                    game.snake.direction = {0, -1};
+                if (IsKeyPressed(KEY_DOWN) && game.snake.direction.y != -1)
+                    game.snake.direction = {0, 1};
+                if (IsKeyPressed(KEY_LEFT) && game.snake.direction.x != 1)
+                    game.snake.direction = {-1, 0};
+                if (IsKeyPressed(KEY_RIGHT) && game.snake.direction.x != -1)
+                    game.snake.direction = {1, 0};
             }
 
             if (IsKeyPressed(KEY_Q))
             {
-                manHinhHienTai = MENU;
-                game.dangChay = false;
-                game.daGhet = false;
+                currentScreen = MENU;
+                game.running = false;
+                game.isDead = false;
             }
 
-            if (game.daGhet && IsKeyPressed(KEY_R))
+            if (game.isDead && IsKeyPressed(KEY_R))
             {
-                game.khoiDongLai();
+                game.Restart();
             }
 
-            float tyLeX = (float)chieuRongCuaSo / hinhNenGame.width;
-            float tyLeY = (float)chieuCaoCuaSo / hinhNenGame.height;
-            float tyLe = fmaxf(tyLeX, tyLeY);
-            DrawTextureEx(hinhNenGame, Vector2{0, 0}, 0.0f, tyLe, WHITE);
+            float scaleX = (float)windowWidth / backgroundTexture.width;
+            float scaleY = (float)windowHeight / backgroundTexture.height;
+            float scale = fmaxf(scaleX, scaleY);
 
-            DrawRectangleLinesEx(Rectangle{(float)leManhGame - 5, (float)leManhGame - 5, (float)soOTrongMoiHangCot * kichThuocO + 10, (float)soOTrongMoiHangCot * kichThuocO + 10}, 5, mauXanhDam);
+            DrawTextureEx(backgroundTexture, Vector2{0, 0}, 0.0f, scale, WHITE);
 
-            DrawText("Snake Game", leManhGame - 5, 20, 40, mauXanhDam);
-            DrawText(TextFormat("Score: %i", game.diem), leManhGame - 5, leManhGame + 5 + soOTrongMoiHangCot * kichThuocO, 40, mauXanhDam);
+            DrawRectangleLinesEx(Rectangle{(float)offset - 5, (float)offset - 5, (float)SoOtrongMoiHangCot * kichThuocO + 10, (float)SoOtrongMoiHangCot * kichThuocO + 10}, 5, darkgreen);
+            DrawText("Snake Game", offset - 5, 20, 40, darkgreen);
+            DrawText(TextFormat("Score: %i", game.score), offset - 5, offset + 5 + SoOtrongMoiHangCot * kichThuocO, 40, darkgreen);
 
-            game.veGame();
+            game.Draw();
 
-            if (game.daGhet)
+            if (game.isDead)
             {
-                DrawRectangle(0, 0, chieuRongCuaSo, chieuCaoCuaSo, Fade(BLACK, 0.7f));
-                DrawText("GAME OVER!", chieuRongCuaSo / 2 - 120, chieuCaoCuaSo / 2 - 60, 40, RED);
-                DrawText(TextFormat("Your Score: %i", game.diem), chieuRongCuaSo / 2 - 80, chieuCaoCuaSo / 2 - 10, 20, WHITE);
-                DrawText("Press R to replay", chieuRongCuaSo / 2 - 90, chieuCaoCuaSo / 2 + 20, 20, WHITE);
-                DrawText("Press Q to return to menu", chieuRongCuaSo / 2 - 85, chieuCaoCuaSo / 2 + 50, 20, WHITE);
+                DrawRectangle(0, 0, windowWidth, windowHeight, Fade(BLACK, 0.7f));
+                DrawText("GAME OVER!", windowWidth / 2 - 120, windowHeight / 2 - 60, 40, RED);
+                DrawText(TextFormat("Final Score: %i", game.score), windowWidth / 2 - 80, windowHeight / 2 - 10, 20, WHITE);
+                DrawText("Press R to Restart", windowWidth / 2 - 90, windowHeight / 2 + 20, 20, WHITE);
+                DrawText("Press Q to Menu", windowWidth / 2 - 85, windowHeight / 2 + 50, 20, WHITE);
             }
-            else if (!game.dangChay && !game.daGhet)
+            else if (!game.running && !game.isDead)
             {
-                DrawText("Press the arrow keys to start", chieuRongCuaSo / 2 - 120, chieuCaoCuaSo / 2, 20, mauXanhDam);
-                DrawText("Q- Return to Menu", chieuRongCuaSo / 2 - 80, chieuCaoCuaSo / 2 + 30, 16, mauXanhDam);
+                DrawText("Press Arrow Keys to Start", windowWidth / 2 - 120, windowHeight / 2, 20, darkgreen);
+                DrawText("Q - Back to Menu", windowWidth / 2 - 80, windowHeight / 2 + 30, 16, darkgreen);
             }
         }
 
-        EndDrawing(); 
+        EndDrawing();
     }
 
-    UnloadTexture(hinhNenMenu);
-    UnloadTexture(hinhNenGame);
-    UnloadTexture(hinhDauRan);
-    UnloadTexture(hinhThanRan);
-    
-    for (int i = 0; i < tongSoLoaiThucAn; i++)
+    UnloadTexture(menubackground);
+    UnloadTexture(backgroundTexture);
+    UnloadTexture(snakeHeadTexture);
+    UnloadTexture(snakeBodyTexture);
+    for (int i = 0; i < totalFoodTypes; i++)
     {
-        UnloadTexture(hinhThucAn[i]);
+        UnloadTexture(foodTextures[i]);
     }
 
-    UnloadMusicStream(nhacNenMenu);
+    UnloadMusicStream(backgroundMusic);
     CloseWindow();
     return 0;
 }
